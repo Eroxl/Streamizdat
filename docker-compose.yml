@@ -1,0 +1,39 @@
+services:
+  srs:
+    image: ossrs/srs:6
+    container_name: srs
+    restart: unless-stopped
+    ports:
+      - "1935:1935"   # RTMP
+      - "8080:8080"   # HTTP-FLV / HLS
+    environment:
+      - TZ=America/Vancouver
+    volumes:
+      - ./srs.conf:/usr/local/srs/conf/srs.conf
+    networks:
+      - srsnet
+    command: ["/usr/local/srs/objs/srs", "-c", "/usr/local/srs/conf/srs.conf"]
+    depends_on:
+      - auth
+
+  auth:
+    build:
+      context: ./auth
+    container_name: auth
+    restart: unless-stopped
+    environment:
+      - PUBLISH_KEY=f4956c20c18249861e1e0cbf2427c41f
+      - STREAM_NAME=eroxl
+    networks:
+      - srsnet
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz" ]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+networks:
+  srsnet:
+    driver: bridge
+
