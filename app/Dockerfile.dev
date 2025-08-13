@@ -1,0 +1,22 @@
+# Development Dockerfile for Next.js with hot reloading
+# Lightweight single-stage (no build output needed)
+FROM node:lts
+
+WORKDIR /app
+
+# Install deps first to leverage Docker layer cache
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile --network-timeout 100000
+
+# Copy rest (will be overridden by bind mount in compose, but ensures container works even sans mount)
+COPY . .
+
+ENV NODE_ENV=development \
+    NEXT_TELEMETRY_DISABLED=1 \
+    # Improves file change detection reliability in some Docker host setups
+    CHOKIDAR_USEPOLLING=1 \
+    WATCHPACK_POLLING=true
+
+EXPOSE 3000
+
+CMD ["yarn", "dev"]

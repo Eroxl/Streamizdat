@@ -10,6 +10,7 @@ services:
       - TZ=America/Vancouver
     volumes:
       - ./srs.conf:/usr/local/srs/conf/srs.conf
+      - ./hls:/usr/local/srs/objs/nginx/html/hls
     networks:
       - srsnet
     command: ["/usr/local/srs/objs/srs", "-c", "/usr/local/srs/conf/srs.conf"]
@@ -23,7 +24,7 @@ services:
     restart: unless-stopped
     environment:
       - PUBLISH_KEY=f4956c20c18249861e1e0cbf2427c41f
-      - STREAM_NAME=eroxl
+      - STREAM_NAME=livestream
     networks:
       - srsnet
     healthcheck:
@@ -32,6 +33,52 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
+
+  ffmpeg:
+    image: jrottenberg/ffmpeg:6.0-ubuntu
+    container_name: ffmpeg
+    restart: unless-stopped
+    volumes:
+      - ./hls:/hls   # write HLS output here (shared with SRS)
+    networks:
+      - srsnet
+    command: >
+      ffmpeg -hide_banner -loglevel info
+      -f flv -i "rtmp://srs/live/livestream"
+      -map 0:v:0 -map 0:a:0 -map 0:v:0 -map 0:a:0 -map 0:v:0 -map 0:a:0
+      -c:v libx264 -crf 22 -c:a aac -ar 44100
+      -filter:v:0 scale=w=480:h=360  -maxrate:v:0 600k -b:a:0 500k
+      -filter:v:1 scale=w=640:h=480  -maxrate:v:1 1500k -b:a:1 1000k
+      -filter:v:2 scale=w=1280:h=720 -maxrate:v:2 3000k -b:a:2 2000k
+      -var_stream_map "v:0,a:0,name:360p v:1,a:1,name:480p v:2,a:2,name:720p"
+      -preset fast -hls_list_size 10 -threads 0
+      -f hls -hls_time 3 -hls_flags independent_segments
+      -master_pl_name "livestream.m3u8"
+      "/hls/livestream-%v.m3u8"
+    depends_on:
+      - srs
+
+  app:
+    build:
+      context: ./app
+    container_name: app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # Next.js
+    environment:
+      - NEXT_PUBLIC_HLS_URL=http://localhost:8080/eroxl/eroxl.m3u8
+      - NODE_ENV=production
+    networks:
+      - srsnet
+    depends_on:
+      - srs
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000" ]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+      
 
 networks:
   srsnet:

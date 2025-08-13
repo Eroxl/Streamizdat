@@ -1,0 +1,64 @@
+version: '3.9'
+
+services:
+  srs:
+    image: ossrs/srs:6
+    container_name: srs-dev
+    restart: unless-stopped
+    ports:
+      - "1935:1935"   # RTMP
+      - "8080:8080"   # HTTP-FLV / HLS
+    environment:
+      - TZ=America/Vancouver
+    volumes:
+      - ./srs.conf:/usr/local/srs/conf/srs.conf:ro
+    networks:
+      - srsnet
+    command: ["/usr/local/srs/objs/srs", "-c", "/usr/local/srs/conf/srs.conf"]
+
+  auth:
+    build:
+      context: ./auth
+    container_name: auth-dev
+    restart: unless-stopped
+    environment:
+      - PUBLISH_KEY=f4956c20c18249861e1e0cbf2427c41f
+      - STREAM_NAME=livestream
+      - NODE_ENV=development
+    networks:
+      - srsnet
+    volumes:
+      - ./auth/src:/auth/src:ro
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.dev
+    container_name: app-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # Next.js dev server (HMR)
+    environment:
+      - NEXT_PUBLIC_HLS_URL=http://localhost:8080/hls/livestream.m3u8
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=1
+    networks:
+      - srsnet
+    depends_on:
+      - srs
+    volumes:
+      # Mount app source for hot reload
+      - ./app:/app
+      # Named volume for node_modules to avoid host<->container permission noise
+      - node_modules_app:/app/node_modules
+    # Healthcheck optional in dev for faster startup; keep commented
+    # healthcheck:
+    #   test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+
+networks:
+  srsnet:
+    driver: bridge
+
+volumes:
+  node_modules_app:
