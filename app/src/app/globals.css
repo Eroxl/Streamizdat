@@ -27,21 +27,29 @@ a {
 }
 
 /* Status modifiers override the color variable */
-.video-glow--online { --glow-rgb: 16,185,129; } /* green */
-.video-glow--offline { --glow-rgb: 220,38,38; } /* red */
-.video-glow--idle { --glow-rgb: 234,179,8; } /* amber (optional) */
+.video-glow--online { --glow-rgb: 163, 190, 140; } /* green */
+.video-glow--offline { --glow-rgb: 191, 97, 106 } /* red */
 
 @keyframes video-glow-pulse {
     0%, 100% {
         box-shadow:
-                0 0 20px 3px rgba(var(--glow-rgb),0.055),
-                0 0 50px 10px rgba(var(--glow-rgb),0.03),
-                0 0 95px 24px rgba(var(--glow-rgb),0.018);
+                0 0 30px 4px rgba(var(--glow-rgb),0.12),
+                0 0 70px 16px rgba(var(--glow-rgb),0.064),
+                0 0 130px 36px rgba(var(--glow-rgb),0.035);
     }
     50% {
         box-shadow:
-                0 0 30px 4px rgba(var(--glow-rgb),0.085),
-                0 0 70px 16px rgba(var(--glow-rgb),0.048),
-                0 0 130px 36px rgba(var(--glow-rgb),0.026);
+                0 0 18px 2px rgba(var(--glow-rgb),0.08),
+                0 0 50px 10px rgba(var(--glow-rgb),0.045),
+                0 0 90px 24px rgba(var(--glow-rgb),0.025);
     }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+.no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
 }

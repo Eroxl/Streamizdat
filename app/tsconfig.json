@@ -14,6 +14,9 @@
     "jsx": "preserve",
     "incremental": true,
     "rootDir": "./",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
     "plugins": [
       {
         "name": "next"

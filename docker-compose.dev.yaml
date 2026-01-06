@@ -1,10 +1,10 @@
-version: '3.9'
-
 services:
   srs:
     image: ossrs/srs:6
     container_name: srs-dev
     restart: unless-stopped
+    logging:
+      driver: none
     ports:
       - "1935:1935"   # RTMP
       - "8080:8080"   # HTTP-FLV / HLS
@@ -12,23 +12,105 @@ services:
       - TZ=America/Vancouver
     volumes:
       - ./srs.conf:/usr/local/srs/conf/srs.conf:ro
+      - ./hls_output:/output
     networks:
       - srsnet
     command: ["/usr/local/srs/objs/srs", "-c", "/usr/local/srs/conf/srs.conf"]
 
-  auth:
+  callbacks:
     build:
-      context: ./auth
-    container_name: auth-dev
+      context: ./srs-callbacks
+    container_name: callbacks-dev
     restart: unless-stopped
     environment:
-      - PUBLISH_KEY=f4956c20c18249861e1e0cbf2427c41f
-      - STREAM_NAME=livestream
+      - PUBLISH_KEY=${PUBLISH_KEY}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - STREAM_NAME=${STREAM_NAME}
       - NODE_ENV=development
     networks:
       - srsnet
+      - dbnet
+    command: ["npm", "run", "dev"]
     volumes:
-      - ./auth/src:/auth/src:ro
+      - ./srs-callbacks/src:/srs-callbacks/src:ro
+  
+  embed_watcher:
+    build:
+      context: ./embed-watcher
+    container_name: embed-watcher-dev
+    restart: unless-stopped
+    environment:
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - PG_HOST=${PG_HOST}
+      - PG_PORT=${PG_PORT}
+      - PG_USER=${PG_USER}
+      - PG_PASSWORD=${PG_PASSWORD}
+      - PG_DATABASE=${PG_DATABASE}
+      - KICK_CLIENT_ID=${KICK_CLIENT_ID}
+      - KICK_CLIENT_SECRET=${KICK_CLIENT_SECRET}
+      - NODE_ENV=development
+    networks:
+      - dbnet
+    command: ["npm", "run", "dev"]
+    volumes:
+      - ./embed-watcher/src:/embed-watcher/src:ro
+  
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: backend-dev
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=development
+      - PG_HOST=${PG_HOST}
+      - PG_PORT=${PG_PORT}
+      - PG_USER=${PG_USER}
+      - PG_PASSWORD=${PG_PASSWORD}
+      - PG_DATABASE=${PG_DATABASE}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - PORT=4000
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    networks:
+      - dbnet
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend/src/:/backend/src/
+
+  db:
+    image: postgres:13
+    container_name: db-dev
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${PG_DATABASE}
+      - POSTGRES_USER=${PG_USER}
+      - POSTGRES_PASSWORD=${PG_PASSWORD} 
+    volumes:
+      - ./db_data:/var/lib/postgresql/data
+    networks:
+      - srsnet
+      - dbnet
+
+  redis:
+    image: redis:latest
+    container_name: redis-dev
+    restart: unless-stopped
+    networks:
+      - dbnet
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
 
   app:
     build:
@@ -39,26 +121,71 @@ services:
     ports:
       - "3000:3000"  # Next.js dev server (HMR)
     environment:
-      - NEXT_PUBLIC_HLS_URL=http://localhost:8080/hls/livestream.m3u8
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
       - CHOKIDAR_USEPOLLING=1
+      - NEXT_PUBLIC_HLS_URL=http://${SRS_HOST}:8080/stream.m3u8
+      - NEXT_PUBLIC_BACKEND_URL=http://${BACKEND_HOST}:4000
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     networks:
-      - srsnet
+      - dbnet
     depends_on:
       - srs
+      - redis
     volumes:
-      # Mount app source for hot reload
-      - ./app:/app
-      # Named volume for node_modules to avoid host<->container permission noise
-      - node_modules_app:/app/node_modules
-    # Healthcheck optional in dev for faster startup; keep commented
-    # healthcheck:
-    #   test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      - ./app/src/:/app/src/
+
+  ffmpeg:
+    image: linuxserver/ffmpeg:latest
+    container_name: ffmpeg-dev
+    restart: unless-stopped
+    init: true
+    mem_limit: 4g
+    memswap_limit: 4g
+    depends_on:
+      - srs
+    networks:
+      - srsnet
+    volumes:
+      - ./hls_output:/output
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        trap 'echo "Shutting down..."; exit 0' SIGTERM SIGINT
+
+        while ! nc -z srs 1935; do
+          echo "Waiting for SRS RTMP server..."
+          sleep 2
+        done
+
+        echo "SRS is ready. Waiting for incoming stream..."
+
+        while true; do
+          ffmpeg -nostdin -y -i rtmp://srs:1935/live/${STREAM_NAME} \
+            -map 0:v:0 -map 0:a:0 \
+            -map 0:v:0 -map 0:a:0 \
+            -map 0:v:0 -map 0:a:0 \
+            -c:v libx264 -crf 22 -preset veryfast -g 48 -sc_threshold 0 \
+            -c:a aac -ar 44100 \
+            -filter:v:0 "scale=w=640:h=360"   -b:v:0 600k  -maxrate:v:0 800k  -bufsize:v:0 1200k -b:a:0 96k \
+            -filter:v:1 "scale=w=1280:h=720"  -b:v:1 1800k -maxrate:v:1 2500k -bufsize:v:1 3750k -b:a:1 128k \
+            -filter:v:2 "scale=w=1920:h=1080" -b:v:2 4000k -maxrate:v:2 5000k -bufsize:v:2 7500k -b:a:2 192k \
+            -var_stream_map "v:0,a:0,name:360p v:1,a:1,name:720p v:2,a:2,name:1080p" \
+            -hls_time 3 -hls_list_size 10 \
+            -hls_flags independent_segments+delete_segments \
+            -master_pl_name "stream.m3u8" \
+            -hls_segment_filename "/output/stream-%v_%03d.ts" \
+            -f hls /output/stream-%v.m3u8 || true
+
+          echo "Stream ended. Clearing output and retrying in 5 seconds..."
+          rm -f /output/*
+          sleep 5
+        done
 
 networks:
   srsnet:
     driver: bridge
-
-volumes:
-  node_modules_app:
+  dbnet:
+    driver: bridge

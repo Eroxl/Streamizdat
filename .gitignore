@@ -2,3 +2,6 @@
 .DS_Store
 /app/.next
 ./hls/**
+hls_output/
+db_data/
+.env

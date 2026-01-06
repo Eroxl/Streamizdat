@@ -2,6 +2,7 @@ import React from 'react';
 import './globals.css';
 
 import { Metadata } from 'next';
+import NavBar from '@/components/NavBar';
 
 export const metadata: Metadata = {
   title: 'Streamizdat',
@@ -11,7 +12,8 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-neutral-950 min-h-screen text-neutral-200 overflow-clip">
+      <body className="bg-nord-dark h-screen flex flex-col text-nord6 overflow-clip">
+        <NavBar />
         {children}
       </body>
     </html>
