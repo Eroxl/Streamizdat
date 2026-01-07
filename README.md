@@ -64,3 +64,15 @@ A develelopment environment can be set up by running the following command:
 ```
 
 This starts all necessary services and watches for file changes to automatically rebuild the backend and frontend (it's a little janky right now, but it works for development purposes).
+
+## Contributing
+
+### Repository Structure
+
+The project is organized as a monorepo with the following structure:
+
+- `backend/`: All REST and Websocket API code.
+- `frontend/`: Central frontend codebase.
+- `embed-watcher/`: Service that monitors embedded streams and pushes updates to Redis.
+- `srs-callbacks/`: Simple HTTP server that handles SRS callbacks for stream start/stop events.
+- `srs.conf`: [SRS](https://github.com/ossrs/srs) configuration file for RTMP streaming.
