@@ -3,6 +3,8 @@
     <p>Entirely Self-Hosted Streaming Platform</p>  
 </div>
 
+![Example Screenshot](./examples/stream-page.png)
+
 Streamizdat is an open-source, self-hosted streaming platform that allows a streamer to broadcast their contnt and engage with their audience without relying on third-party services. 
 
 Built with a focus on privacy, customization, and community engagement, Streamizdat provides streamers with the tools they need to create a unique streaming experience.
