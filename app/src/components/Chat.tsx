@@ -100,10 +100,12 @@ const Chat: React.FC<{ readonly?: boolean }> = ({ readonly = false }) => {
     const broadcastedEmbed = useRef<string | null>(null);
     
     useEffect(() => {
-        if (!embed || embed === broadcastedEmbed.current) return;
-        broadcastedEmbed.current = embed;
+        const parsedEmbed = embed || "default/default";
+
+        if (parsedEmbed === broadcastedEmbed.current) return;
+        broadcastedEmbed.current = parsedEmbed;
         
-        const [platform, embedUrl] = embed.split("/");
+        const [platform, embedUrl] = parsedEmbed.split("/");
 
         const broadcastEmbed = () => {
             if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {

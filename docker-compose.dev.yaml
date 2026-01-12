@@ -80,6 +80,7 @@ services:
       - PORT=4000
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - EMOTES_DIR=/data/emotes
     networks:
       - dbnet
     depends_on:
@@ -87,6 +88,7 @@ services:
       - redis
     volumes:
       - ./backend/src/:/backend/src/
+      - ./data/emotes:/data/emotes
 
   db:
     image: postgres:13

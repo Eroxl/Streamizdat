@@ -3,12 +3,18 @@
 import useStreamSettings from "@/lib/hooks/useStreamSettings";
 import useCreateCommunityEmbed from "@/lib/mutations/useCreateCommunityEmbed";
 import useDeleteCommunityEmbed from "@/lib/mutations/useDeleteCommunityEmbed";
-import React from "react";
+import React, { useState } from "react";
 import { SettingHeader } from "@/components/settings/SettingHeader";
 import { SettingSubheader } from "@/components/settings/SettingSubheader";
 import { AddPlatformEmbed } from "@/components/settings/AddPlatformEmbed";
 import useUpdateCommunityEmbed from "@/lib/mutations/useUpdateCommunityEmbed";
 import { DropdownPlatformEmbedSettings } from "@/components/settings/DropdownPlatformEmbedSettings";
+import useEmotes from "@/lib/hooks/useEmotes";
+import usePermissions, { hasPermission } from "@/lib/hooks/usePermissions";
+import useUploadEmote from "@/lib/mutations/useUploadEmote";
+import useDeleteEmote from "@/lib/mutations/useDeleteEmote";
+import { EmoteCard } from "@/components/settings/EmoteCard";
+import { AddEmote } from "@/components/settings/AddEmote";
 
 const STREAM_URL = "rtmp://localhost/live/livestream?key=";
 const SUPPORTED_EMBED_PLATFORMS = ["native", "twitch", "youtube", "kick"] as const;
@@ -19,6 +25,15 @@ export default function Home() {
   const createCommunityEmbed = useCreateCommunityEmbed();
   const deleteCommunityEmbed = useDeleteCommunityEmbed();
   const updateCommunityEmbed = useUpdateCommunityEmbed();
+  
+  // Emote management
+  const emotes = useEmotes();
+  const permissions = usePermissions();
+  const uploadEmote = useUploadEmote();
+  const deleteEmote = useDeleteEmote();
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  
+  const canManageEmotes = hasPermission(permissions.data, "manage_emotes");
 
   if (streamSettings.isLoading || streamSettings.data === undefined) {
     return (
@@ -85,6 +100,64 @@ export default function Home() {
             />
           ))
         }
+      </div>
+
+      {/* Emotes Section */}
+      <div className="mt-8">
+        <SettingSubheader 
+          title="Channel Emotes" 
+          description="Custom emotes that can be used in chat by your community." 
+        />
+
+        <div className="flex flex-col gap-4 mt-4">
+          {canManageEmotes && (
+            <AddEmote
+              onAdd={(file, name) => {
+                setUploadError(null);
+                uploadEmote.mutate(
+                  { file, name },
+                  {
+                    onError: (error) => {
+                      setUploadError(error.message);
+                    },
+                  }
+                );
+              }}
+              isUploading={uploadEmote.isPending}
+              error={uploadError}
+            />
+          )}
+
+          {emotes.isLoading && (
+            <div className="text-nord4/70">Loading emotes...</div>
+          )}
+
+          {emotes.error && (
+            <div className="text-nord11">
+              Failed to load emotes: {emotes.error.message}
+            </div>
+          )}
+
+          {emotes.data && emotes.data.length === 0 && (
+            <div className="text-nord4/70 bg-nord0 rounded-md p-4">
+              No emotes uploaded yet.
+            </div>
+          )}
+
+          {emotes.data && emotes.data.length > 0 && (
+            <div className="grid grid-cols-4 md:grid-cols-6 w-full gap-3">
+              {emotes.data.map((emote) => (
+                <EmoteCard
+                  key={emote.id}
+                  emote={emote}
+                  canManage={canManageEmotes}
+                  onDelete={(id) => deleteEmote.mutate(id)}
+                  isDeleting={deleteEmote.isPending}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

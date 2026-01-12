@@ -5,9 +5,7 @@ import { Request } from "express";
 import { fromNodeHeaders } from "better-auth/node";
 import auth from "../auth";
 import redisClientSubscribe from "../db/redisClientSubscribe";
-import { adminUsers } from "../db/schemas/settings-schema";
-import db from "../db/db";
-import { eq } from "drizzle-orm";
+import getUserDisplay from "../lib/chat/getUserDisplay";
 
 const chatClients: Set<{
   user:
@@ -100,45 +98,6 @@ redisClientSubscribe.subscribe("stream_status", (message: string) => {
     );
   }
 });
-
-const USER_COLORS = {
-  ANONYMOUS: "#434c5e",
-  DEFAULT_USER: "#4c566a",
-
-  STREAMER: "#bf616a",
-  MODERATOR: "#a3be8c",
-}
-
-const getUserDisplay = async (user: User | { name: string, id?: null }): Promise<[
-  string,
-  string[]
-]> => {
-  if (!user.id) return [USER_COLORS.ANONYMOUS, []];
-
-  let color = null;
-  let badges: string[] = [];
-
-    const adminRecord = await db
-      .select()
-      .from(adminUsers)
-      .where(eq(adminUsers.userId, user.id))
-      .limit(1)
-      .then((res) => res[0]);
-
-    if (adminRecord?.permissions.includes("super_user")) {
-      color = color || USER_COLORS.STREAMER;
-      badges.push("streamer");
-    } else if (adminRecord) {
-      color = color || USER_COLORS.MODERATOR;
-      badges.push("moderator");
-    }
-
-    return [
-      color || USER_COLORS.DEFAULT_USER,
-      badges,
-    ]
-};
-
 
 export default (app: expressWs.Application) => {
   app.ws("/ws/chat", async (ws: WebSocket, req: Request) => {

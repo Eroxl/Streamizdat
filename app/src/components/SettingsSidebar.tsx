@@ -3,7 +3,7 @@
 import { CircleUser, Shield, Users, Video } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import usePermissions, { hasPermission } from "@/lib/hooks/usePermissions";
 
 const navigationItems = [
     {
@@ -31,33 +31,9 @@ const navigationItems = [
     }
 ];
 
-const getUserPermissions = async () => {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/admin/permissions`, {
-        method: 'GET',
-        credentials: 'include',
-    });
-
-    if (!response.ok) {
-        return [];
-    }
-
-    const data = await response.json();
-    return data.permissions as string[];
-};
-
 export default function SettingsSidebar() {
     const pathName = usePathname();
-    
-    const [userPermissions, setUserPermissions] = useState<string[] | null>(
-       null 
-    );
-
-    useEffect(() => {
-        (async () => {
-            const permissions = await getUserPermissions();
-            setUserPermissions(permissions);
-        })();
-    }, []);
+    const { data: userPermissions } = usePermissions();
 
     return (
         <aside
@@ -67,13 +43,7 @@ export default function SettingsSidebar() {
                 {navigationItems
                     .filter((item) => {
                         if (!item.requiredPermission) return true;
-                        if (!userPermissions) return false;
-
-                        const isSuperAdmin = userPermissions.includes("super_user");
-
-                        if (isSuperAdmin) return true;
-
-                        return userPermissions.includes(item.requiredPermission);
+                        return hasPermission(userPermissions, item.requiredPermission);
                     })
                     .map((item) => (
                         <Link

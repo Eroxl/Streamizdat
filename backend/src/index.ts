@@ -83,10 +83,12 @@ import requireAdmin from "./middleware/requireAdmin";
 
 import chatRouter from "./websockets/chat";
 import adminRouter from './admin';
+import emotesRouter from './emotes';
 
 chatRouter(app);
 
 app.use('/', requireAdmin, adminRouter);
+app.use('/emotes', emotesRouter);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

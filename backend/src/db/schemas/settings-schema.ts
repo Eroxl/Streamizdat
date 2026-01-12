@@ -29,6 +29,7 @@ export const streamSettings = pgTable(
 
 export const ADMIN_USER_PERMISSIONS = [
     "manage_embeds",
+    "manage_emotes",
     "discipline_users",
     "manage_stream_settings",
     "manage_admin_users",
