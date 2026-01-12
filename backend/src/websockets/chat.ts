@@ -144,7 +144,6 @@ export default (app: expressWs.Application) => {
 
     ws.on("message", function (msg: WebSocket.Data) {
       if (msg.toString().includes('{"type":')) {
-        console.log(msg);
         if (session === null) return;
     
         const parsed = JSON.parse(msg.toString());
@@ -202,6 +201,8 @@ export default (app: expressWs.Application) => {
       const message = msg.toString()
         .replace(/\\/, "&bsol;")
         .replace(/"/g, "&quot;");
+
+      console.log(`[Chat] ${user.name}: ${message}`);
 
       recentMessages.push({
         user: {

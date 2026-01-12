@@ -87,8 +87,8 @@ import emotesRouter from './emotes';
 
 chatRouter(app);
 
-app.use('/', requireAdmin, adminRouter);
 app.use('/emotes', emotesRouter);
+app.use('/admin', requireAdmin, adminRouter);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

@@ -11,7 +11,7 @@ import communityEmbedRouter from './communityEmbed';
 
 const router = express.Router();
 
-const ROUTER_PATH = '/admin/';
+const ROUTER_PATH = '/';
 
 router.use(ROUTER_PATH, hasPermissions(['manage_stream_settings']), getStreamSettingsRouter);
 router.use(ROUTER_PATH, hasPermissions(['manage_stream_settings']), updateStreamSettingsRouter);

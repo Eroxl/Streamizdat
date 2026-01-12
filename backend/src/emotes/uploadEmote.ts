@@ -12,7 +12,7 @@ import { emotes } from "../db/schemas/emotes-schema";
 const router = express.Router();
 
 const EMOTES_DIR = process.env.EMOTES_DIR || "/data/emotes";
-const EMOTE_HEIGHT = 32;
+const EMOTE_HEIGHT = 128;
 const MAX_FILE_SIZE = 512 * 1024;
 
 const upload = multer({

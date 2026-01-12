@@ -1,5 +1,6 @@
 import React from 'react';
 import './globals.css';
+import QueryProvider from "@/lib/contexts/QueryProvider";
 
 import { Metadata } from 'next';
 import NavBar from '@/components/NavBar';
@@ -13,8 +14,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="bg-nord-dark h-screen flex flex-col text-nord6 overflow-clip">
-        <NavBar />
-        {children}
+        <QueryProvider>
+          <NavBar />
+          {children}
+        </QueryProvider>
       </body>
     </html>
   );
