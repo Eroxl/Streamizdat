@@ -2,256 +2,24 @@
 
 import { Embed } from "@/lib/hooks/useStreamSettings";
 import Link from "next/link";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import useEmotes from "@/lib/hooks/useEmotes";
-import { EmoteData } from "@/lib/types/emote";
 import AutoHeightInput from "./AutoHeightInput";
 import { Smile, X } from "lucide-react";
+import { ChatMessage, LiveEmbed, ChatUser } from "@/types/chat";
+import { updatedEmbed } from "@/lib/chat/updatedEmbed";
+import EmoteAutoComplete from "./chat/EmoteAutoComplete";
+import EmotePicker from "./chat/EmotePicker";
+import ChatMessageComponent from "./chat/ChatMessage";
 
 const MAX_RECONNECT_ATTEMPTS = 5;
-
-type ChatUser = {
-    name: string;
-    color: string;
-    badges: string[];
-};
-
-type ChatMessageType = "you" | "other" | "system";
-
-type ChatMessage = {
-    user: ChatUser;
-    type: ChatMessageType;
-    message: string;
-}
-
-const EmoteAutoComplete: React.FC<{
-    emotes: EmoteData[];
-    onSelect: (emote: EmoteData) => void;
-    currentInput: string;
-}> = ({ emotes, onSelect, currentInput }) => {
-    const [isMenuHidden, setIsMenuHidden] = useState<boolean>(false);
-
-    const matchingEmotes = useMemo(() => {
-        if (currentInput.trim() === "") return [];
-        
-        if (currentInput.endsWith(" ")) setIsMenuHidden(false);
-
-        const searchTerm = currentInput.split(" ").pop() || "";
-        if (searchTerm.length === 0) return [];
-
-        return emotes
-            .filter(emote =>
-                emote.name.toLowerCase().startsWith(searchTerm.toLowerCase())
-            )
-            .slice(0, 5)
-    }, [currentInput, emotes, isMenuHidden]);
-    
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key !== "Tab" || matchingEmotes.length === 0) return;
-
-            e.preventDefault();
-            onSelect(matchingEmotes[0]);
-        };
-
-        window.addEventListener("keydown", handleKeyDown);
-
-        return () => {
-            window.removeEventListener("keydown", handleKeyDown);
-        };
-    }, [matchingEmotes]);
-
-    if (matchingEmotes.length === 0 || isMenuHidden) return null; 
-
-    return (
-        <div className="absolute bottom-full left-0 right-0 rounded bg-black/5 mb-1">
-            <div className="grid grid-cols-6 gap-2 p-2 max-h-64 overflow-y-auto no-scrollbar">
-                {matchingEmotes.map((emote, index) => (
-                    <div
-                        key={index}
-                        className="cursor-pointer"
-                        onClick={() => onSelect(emote)}
-                    >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                            src={emote.url}
-                            alt={emote.name}
-                            title={emote.name}
-                            className="inline-block h-8 w-auto"
-                            width={emote.width}
-                            height={emote.height}
-                        />
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
-const EmotePicker: React.FC<{
-    emotes: EmoteData[];
-    onSelect: (emote: EmoteData) => void;
-}> = ({ emotes, onSelect }) => {
-    return (
-        <div className="grid grid-cols-6 gap-2 p-2 max-h-64 overflow-y-auto no-scrollbar">
-            {emotes.map((emote, index) => (
-                <div
-                    key={index}
-                    className="cursor-pointer"
-                    onClick={() => onSelect(emote)}
-                >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                        src={emote.url}
-                        alt={emote.name}
-                        title={emote.name}
-                        className="inline-block h-8 w-auto"
-                        width={emote.width}
-                        height={emote.height}
-                    />
-                </div>
-            ))}
-        </div>
-    );
-};
-
-const parseMessageWithEmotes = (message: string, emotes: EmoteData[]): (string | EmoteData)[] => {
-    if (!emotes || emotes.length === 0) return [message];
-
-    const emoteMap = new Map(emotes.map(e => [e.name, e]));
-    const parts: (string | EmoteData)[] = [];
-
-    const words = message.split(/(\s+)/);
-
-    for (const word of words) {
-        const emote = emoteMap.get(word);
-
-        if (emote) {
-            parts.push(emote);
-            continue;
-        }
-
-        const isContinuingText = parts.length > 0 && typeof parts[parts.length - 1] === 'string';
-
-        if (!isContinuingText) parts.push("");
-
-        parts[parts.length - 1] = (parts[parts.length - 1] as string) + word;
-    }
-
-    return parts
-        .map(part => {
-            if (typeof part === 'string') {
-                return part
-                    .trim()
-                    .replaceAll(/\n{2,}/g, '\n')
-                    .replaceAll(/ +/g, ' ');
-            }
-            return part;
-        })
-        .filter(part => typeof part !== 'string' || part.length > 0)
-};
-
-const ChatMessage: React.FC<{
-    message: ChatMessage;
-    emotes: EmoteData[];
-}> = ({ message, emotes }) => {
-    const { user, type } = message;
-
-    const parsedMessage = useMemo(() => {
-        const decodedMessage = message.message
-            .replaceAll("&bsol;", "\\")
-            .replaceAll("&quot;", "\"");
-        return parseMessageWithEmotes(decodedMessage, emotes);
-    }, [message.message, emotes]);
-
-    return (
-        <div className="text-wrap break-words">
-            <span className="inline items-center mr-1">
-                {user.badges.map((badge, index) => (
-                    <Image
-                        key={index}
-                        src={`/badges/${badge}.svg`}
-                        title={badge.replaceAll("_", " ").split(" ").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")}
-                        alt={badge}
-                        className="w-4 h-4 mr-1 align-middle inline rounded"
-                        width={16}
-                        height={16}
-                    />
-                ))}
-                <strong style={{ color: user.color }}>{user.name}:</strong>{" "}
-            </span>
-            {parsedMessage.map((part, index) =>
-                typeof part === 'string' ? (
-                    <span key={index} className="mr-0.5">
-                        {part.split('\n').map((line, i, arr) => (
-                            <span key={i} className={line.startsWith("> ") ? "text-nord14" : undefined}>
-                                {line}
-                                {i < arr.length - 1 && <br />}
-                            </span>
-                        ))}
-                    </span>
-                ) : (
-                    <div className="inline-block mr-0.5 h-6 w-auto" key={index}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                            key={index}
-                            src={part.url}
-                            alt={part.name}
-                            title={part.name}
-                            className="inline-block mr-0.5 h-8 w-auto"
-                            width={part.width}
-                            height={part.height}
-                        />
-                    </div>
-                )
-            )}
-        </div>
-    );
-};
-
-const updatedEmbed = (embeds: {
-    platform: Embed["platform"];
-    channelId: string;
-    displayName: string;
-    embedCount: number;
-    embedUrl: string;
-}[], platform: Embed["platform"], channelId: string, displayName: string, embedCount: number, embedUrl: string) => {
-    const existingEmbed = embeds.find(
-        (embed) => embed.platform === platform && embed.channelId === channelId
-    );
-
-    if (existingEmbed) {
-        return embeds.map((embed) =>
-            embed === existingEmbed
-                ? { ...embed, embedCount: embedCount }
-                : embed
-        );
-    }
-
-    return [
-        ...embeds,
-        {
-            platform,
-            channelId,
-            displayName,
-            embedUrl,
-            embedCount: embedCount,
-        },
-    ];
-}
 
 const Chat: React.FC<{ readonly?: boolean }> = ({ readonly = false }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [userInfo, setUserInfo] = useState<ChatUser | null>(null);
-    const [embeds, setEmbeds] = useState<{
-        platform: Embed["platform"];
-        channelId: string;
-        displayName: string;
-        embedCount: number;
-        embedUrl: string;
-    }[]>([]);
+    const [embeds, setEmbeds] = useState<LiveEmbed[]>([]);
     const [input, setInput] = useState<string>("");
     const chatRef = useRef<HTMLDivElement | null>(null);
     const { data: emotes = [] } = useEmotes();
@@ -405,7 +173,12 @@ const Chat: React.FC<{ readonly?: boolean }> = ({ readonly = false }) => {
             }
             <div className="flex-1 min-h-0 overflow-y-auto w-full px-4 pt-2 pb-0 no-scrollbar" ref={chatRef}>
                 {messages.map((msg, index) => (
-                    <ChatMessage key={index} message={msg} emotes={emotes} />
+                    <ChatMessageComponent
+                        key={index}
+                        message={msg}
+                        emotes={emotes}
+                        embeds={embeds}
+                    />
                 ))}
             </div>
             {!readonly &&
