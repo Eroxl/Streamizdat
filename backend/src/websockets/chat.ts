@@ -1,105 +1,27 @@
-import { User } from "better-auth";
+import { fromNodeHeaders } from "better-auth/node";
+import { Request } from "express";
 import expressWs from "express-ws";
 import WebSocket from "ws";
-import { Request } from "express";
-import { fromNodeHeaders } from "better-auth/node";
+
 import auth from "../auth";
-import redisClientSubscribe from "../db/redisClientSubscribe";
-import getUserDisplay from "../lib/chat/getUserDisplay";
-
-const chatClients: Set<{
-  user:
-    | User
-    | {
-        name: string;
-      };
-  ws: WebSocket;
-}> = new Set();
-
-const recentMessages: {
-  user: {
-    name: string;
-    color: string;
-    badges: string[];
-  };
-  message: string;
-}[] = [];
-
-const liveEmbeds: Map<
-  string,
-  {
-    platform: string;
-    channelId: string;
-    embedUrl: string;
-    displayName: string;
-  }
-> = new Map();
-
-const embedUrlToChannelId: Map<string, string> = new Map();
-
-const embedCounts = new Map<string, number>();
-
-const getEmbedKey = (channelId: string, platform: string) => {
-  return platform + ":" + channelId;
-};
-
-redisClientSubscribe.subscribe("stream_status", (message: string) => {
-  const parsedMessage = JSON.parse(message) as {
-    platform: string;
-    channelId: string;
-    displayName: string;
-    status: "live" | "offline";
-    embedUrl: string;
-  };
-
-  chatClients.forEach((client) => {
-    if (client.ws.readyState !== WebSocket.OPEN) return;
-
-    client.ws.send(
-      JSON.stringify({
-        type: "embedStatusChange",
-        data: {
-          platform: parsedMessage.platform,
-          channelId: parsedMessage.channelId,
-          embedUrl: parsedMessage.embedUrl,
-          displayName: parsedMessage.displayName,
-          embedCount:
-            embedCounts.get(
-              getEmbedKey(parsedMessage.channelId, parsedMessage.platform)
-            ) || 0,
-          status: parsedMessage.status,
-        },
-      })
-    );
-  });
-
-  if (parsedMessage.status === "live") {
-    liveEmbeds.set(
-      getEmbedKey(parsedMessage.channelId, parsedMessage.platform),
-      {
-        platform: parsedMessage.platform,
-        channelId: parsedMessage.channelId,
-        embedUrl: parsedMessage.embedUrl,
-        displayName: parsedMessage.displayName,
-      }
-    );
-    
-    embedUrlToChannelId.set(
-      parsedMessage.embedUrl,
-      parsedMessage.channelId,
-    );
-  } else {
-    liveEmbeds.delete(
-      getEmbedKey(parsedMessage.channelId, parsedMessage.platform)
-    );
-    
-    embedUrlToChannelId.delete(
-      parsedMessage.embedUrl,
-    );
-  }
-});
+import { initializeChatApp } from "../lib/chat/chatApp";
+import adminVerificationPlugin from "../lib/chat/plugins/adminVerification";
+import broadcastMessagePlugin from "../lib/chat/plugins/broadcastMessage";
+import embedMiddlewarePlugin from "../lib/chat/plugins/embedCounts";
+import hashCashPlugin from "../lib/chat/plugins/hashCash";
+import userDisplayPlugin from "../lib/chat/plugins/userDisplay";
+import runMiddleware from "../lib/chat/runMiddleware";
 
 export default (app: expressWs.Application) => {
+  const chatApp = initializeChatApp();
+
+  chatApp.use(adminVerificationPlugin);
+  
+  chatApp.use(userDisplayPlugin);
+  chatApp.use(embedMiddlewarePlugin);
+  chatApp.use(hashCashPlugin);
+  chatApp.use(broadcastMessagePlugin);
+
   app.ws("/ws/chat", async (ws: WebSocket, req: Request) => {
     const session = await auth.api.getSession({
       headers: fromNodeHeaders(req.headers),
@@ -109,160 +31,44 @@ export default (app: expressWs.Application) => {
       name: "Anonymous" + Math.floor(Math.random() * 1000),
     };
 
-    const [userColor, userBadges] = await getUserDisplay(user);
-
-    chatClients.add({
+    const client = {
       user: user,
       ws: ws,
-    });
+      state: {},
+    }
 
-    ws.send(JSON.stringify({ type: "recentMessages", data: recentMessages }));
-    ws.send(
-      JSON.stringify({
-        type: "userInfo",
-        data: { name: user.name, color: userColor, badges: userBadges },
-      })
-    );
-    ws.send(
-      JSON.stringify({
-        type: "initialLiveEmbeds",
-        data: Array.from(liveEmbeds.entries()).map(([key, embed]) => {
-          const [platform, channelId] = key.split(":");
+    chatApp.clients.add(client);
 
-          return {
-            platform,
-            channelId,
-            embedUrl: embed.embedUrl,
-            displayName: embed.displayName,
-            embedCount: embedCounts.get(key) || 0,
-          };
-        }),
-      })
-    );
+    const connectMiddleware = chatApp.middleware.connect;
+    runMiddleware(connectMiddleware, chatApp, client);
 
-    let embededChannel: string | null = null;
+    ws.on("message", async function (msg: WebSocket.Data) {
+      let parsedMessage: any = null;
 
-    ws.on("message", function (msg: WebSocket.Data) {
       if (msg.toString().includes('{"type":')) {
-        if (session === null) return;
-    
-        const parsed = JSON.parse(msg.toString());
-
-        if (parsed.type === "embed") {
-          const { platform, embedUrl } = parsed.data;
-          const channelId = (platform === "youtube" ? embedUrlToChannelId.get(embedUrl) : embedUrl);
-          const key = platform + ":" + channelId;
-
-          if (embededChannel !== null) {
-            const previousCount = embedCounts.get(embededChannel) || 1;
-            embedCounts.set(embededChannel, previousCount - 1);
-          
-            const [previousPlatform, previousChannelId] = embededChannel.split(":");
-            chatClients.forEach((client) => {
-              if (!embededChannel) return;
-
-              if (client.ws.readyState === WebSocket.OPEN) {
-                client.ws.send(
-                  JSON.stringify({
-                    type: "embedCountUpdate",
-                    data: {
-                      platform: previousPlatform,
-                      channelId: previousChannelId,
-                      embedCount: previousCount - 1,
-                    },
-                  })
-                );
-              }
-            });
-          }
-
-          embedCounts.set(key, (embedCounts.get(key) || 0) + 1);
-          embededChannel = key;
-
-          chatClients.forEach((client) => {
-            if (client.ws.readyState === WebSocket.OPEN) {
-              client.ws.send(
-                JSON.stringify({
-                  type: "embedCountUpdate",
-                  data: {
-                    platform: platform,
-                    channelId: channelId,
-                    embedCount: embedCounts.get(key) || 0,
-                  },
-                })
-              );
-            }
-          });
-
-          return;
-        }
+        parsedMessage = JSON.parse(msg.toString());
+      } else {
+        parsedMessage = msg.toString()
+          .replace(/\\/, "&bsol;")
+          .replace(/"/g, "&quot;");
       }
 
-      const message = msg.toString()
-        .replace(/\\/, "&bsol;")
-        .replace(/"/g, "&quot;");
+      if (parsedMessage === null) return;
 
-      console.log(`[Chat] ${user.name}: ${message}`);
-
-      recentMessages.push({
-        user: {
-          name: user.name,
-          color: userColor,
-          badges: userBadges,
-        },
-        message: message,
-      });
-
-      if (recentMessages.length > 50) recentMessages.shift();
-
-      chatClients.forEach((client) => {
-        if (client.ws !== ws && client.ws.readyState === WebSocket.OPEN) {
-          client.ws.send(
-            JSON.stringify({
-              type: "newMessage",
-              data: {
-                user: {
-                  name: user.name,
-                  color: userColor,
-                  badges: userBadges,
-                },
-                message: message,
-              },
-            })
-          );
-        }
-      });
+      const messageMiddleware = chatApp.middleware.message;
+      runMiddleware(messageMiddleware, parsedMessage, chatApp, client);
     });
 
     ws.on("close", () => {
-      chatClients.forEach((client) => {
-        if (client.ws !== ws) return;
-
-        chatClients.delete(client);
-
-        if (embededChannel !== null) {
-          const previousCount = embedCounts.get(embededChannel) || 1;
-          embedCounts.set(embededChannel, previousCount - 1);
-
-          const [previousPlatform, previousChannelId] = embededChannel.split(":");
-          chatClients.forEach((otherClient) => {
-            if (!embededChannel) return;
-
-            if (otherClient.ws !== ws && otherClient.ws.readyState === WebSocket.OPEN) {
-              otherClient.ws.send(
-                JSON.stringify({
-                  type: "embedCountUpdate",
-                  data: {
-                    platform: previousPlatform,
-                    channelId: previousChannelId,
-                    embedCount: previousCount - 1,
-                  },
-                })
-              );
-            }
-          });
+      for (const client of chatApp.clients) {
+        if (client.ws === ws) {
+          chatApp.clients.delete(client);
+          break;
         }
-      });
+      }
+
+      const closeMiddleware = chatApp.middleware.close;
+      runMiddleware(closeMiddleware, chatApp, client);
     });
   });
 };

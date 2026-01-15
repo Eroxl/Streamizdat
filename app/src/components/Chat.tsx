@@ -1,6 +1,6 @@
 "use client";
 
-import { Embed } from "@/lib/hooks/useStreamSettings";
+import * as Comlink from "comlink";
 import Link from "next/link";
 import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
@@ -13,11 +13,13 @@ import { updatedEmbed } from "@/lib/chat/updatedEmbed";
 import EmoteAutoComplete from "./chat/EmoteAutoComplete";
 import EmotePicker from "./chat/EmotePicker";
 import ChatMessageComponent from "./chat/ChatMessage";
+import { WorkerApi } from "@/workers/functions.worker";
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 
 const Chat: React.FC<{ readonly?: boolean }> = ({ readonly = false }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [error, setError] = useState<string | null>(null);
     const [userInfo, setUserInfo] = useState<ChatUser | null>(null);
     const [embeds, setEmbeds] = useState<LiveEmbed[]>([]);
     const [input, setInput] = useState<string>("");
@@ -31,6 +33,23 @@ const Chat: React.FC<{ readonly?: boolean }> = ({ readonly = false }) => {
     const emoteMenuButtonRef = useRef<HTMLButtonElement | null>(null);
     const inputRef = useRef<HTMLTextAreaElement | null>(null);
     const [isEmotePickerOpen, setIsEmotePickerOpen] = useState<boolean>(false);
+
+    const workerRef = useRef<Comlink.Remote<WorkerApi> | null>(null);
+    const workerInstance = useRef<Worker | null>(null);
+
+    useEffect(() => {
+        workerInstance.current = new Worker(
+            new URL("@/workers/functions.worker.ts", import.meta.url),
+            { type: "module" }
+        );
+
+        workerRef.current = Comlink.wrap<WorkerApi>(workerInstance.current);
+        
+        return () => {
+            workerInstance.current?.terminate();
+            console.log("Basic worker terminated");
+        };
+    }, []);
 
     useEffect(() => {
         const parsedEmbed = embed || "default/default";
@@ -71,7 +90,7 @@ const Chat: React.FC<{ readonly?: boolean }> = ({ readonly = false }) => {
                     setMessages((prevMessages) => [...prevMessages, messageData.data]);
                 } else if (messageData.type === "userInfo") {
                     setUserInfo(messageData.data);
-                } else if (messageData.type === "initialLiveEmbeds") {
+                } else if (messageData.type === "initialEmbedCounts") {
                     setEmbeds(messageData.data);
                 } else if (messageData.type === "embedStatusChange") {
                     if (messageData.data.status === "live") {
@@ -105,13 +124,31 @@ const Chat: React.FC<{ readonly?: boolean }> = ({ readonly = false }) => {
                                 : embed
                         )
                     );
+                } else if (messageData.type === "hashCashChallenge") {
+                    (async () => {
+                        if (!workerRef.current) return;
+
+                        const solution = await workerRef.current.solveHashCash(
+                            messageData.data.challenge,
+                            messageData.data.difficulty
+                        );
+
+                        ws.current?.send(JSON.stringify({
+                            type: "hashCashSolution",
+                            data: {
+                                solution,
+                            },
+                        }));
+                    })();
+                } else if (messageData.type === "error") {
+                    setError(messageData.data.message);
                 }
             };
 
             ws.current.onclose = () => {
                 if (reconnectAttempts.current >= MAX_RECONNECT_ATTEMPTS) return;
 
-                const timeout = Math.pow(2, reconnectAttempts.current) * 1000; // Exponential backoff
+                const timeout = Math.pow(2, reconnectAttempts.current) * 1000;
                 setTimeout(() => {
                     reconnectAttempts.current += 1;
                     connectWebSocket();
@@ -136,6 +173,7 @@ const Chat: React.FC<{ readonly?: boolean }> = ({ readonly = false }) => {
         if (!ws.current || input.trim() == "") return;
 
         ws.current.send(input);
+        setError(null);
         setInput("");
         setMessages((prevMessages) => [...prevMessages, { user: userInfo!, type: "you", message: input }]);
     };
