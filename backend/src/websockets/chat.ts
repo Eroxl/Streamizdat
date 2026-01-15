@@ -11,6 +11,7 @@ import embedMiddlewarePlugin from "../lib/chat/plugins/embedCounts";
 import hashCashPlugin from "../lib/chat/plugins/hashCash";
 import userDisplayPlugin from "../lib/chat/plugins/userDisplay";
 import runMiddleware from "../lib/chat/runMiddleware";
+import recentMessagesPlugin from "../lib/chat/plugins/recentMessages";
 
 export default (app: expressWs.Application) => {
   const chatApp = initializeChatApp();
@@ -20,6 +21,8 @@ export default (app: expressWs.Application) => {
   chatApp.use(userDisplayPlugin);
   chatApp.use(embedMiddlewarePlugin);
   chatApp.use(hashCashPlugin);
+  chatApp.use(recentMessagesPlugin);
+
   chatApp.use(broadcastMessagePlugin);
 
   app.ws("/ws/chat", async (ws: WebSocket, req: Request) => {
